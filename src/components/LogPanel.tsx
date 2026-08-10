@@ -1,0 +1,31 @@
+import type { LogEntry } from "../types";
+import { LOG } from "../constants";
+
+interface LogPanelProps {
+  logs: LogEntry[];
+  logEndRef: React.RefObject<HTMLDivElement | null>;
+}
+
+const formatLogLine = (log: LogEntry) =>
+  `[${log.time}] ${LOG[log.kind]} ${log.text}`;
+
+export function LogPanel({ logs, logEndRef }: LogPanelProps) {
+  return (
+    <section className="flex flex-1 flex-col border-t-4 border-teal-400 bg-black text-white">
+      <div className="flex shrink-0 items-center justify-between border-b border-neutral-700 px-4 py-3">
+        <span className="font-mono text-sm uppercase tracking-[0.3em]">
+          Log
+        </span>
+        <span className="font-mono text-sm">{logs.length} Records</span>
+      </div>
+      <div className="flex-1 space-y-1 overflow-y-scroll px-4 py-3 font-mono text-sm">
+        {logs.length === 0 ? (
+          <p className="text-neutral-500">Waiting...</p>
+        ) : (
+          logs.map((log) => <div key={log.id}>{formatLogLine(log)}</div>)
+        )}
+        <div ref={logEndRef} />
+      </div>
+    </section>
+  );
+}

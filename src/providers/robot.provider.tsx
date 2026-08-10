@@ -80,6 +80,9 @@ export interface RobotStatusLog {
 interface RobotContextType {
   connected: ConnectionState;
 
+  /** Whether Node-RED is currently registered with the gateway. */
+  noderedOnline: boolean;
+
   flow: FlowNode[];
 
   battery: BatteryData | null;
@@ -115,6 +118,7 @@ export function RobotProvider({
   const shouldReconnectRef = useRef(true);
 
   const [connected, setConnected] = useState<ConnectionState>("connecting");
+  const [noderedOnline, setNoderedOnline] = useState(false);
 
   const [flow, setFlow] = useState<FlowNode[]>([]);
 
@@ -131,17 +135,24 @@ export function RobotProvider({
   const [robotStatusLogs, setRobotStatusLogs] = useState<RobotStatusLog[]>([]);
   const robotStatusLogIdRef = useRef(0);
 
-  const [socketUrl, setSocketUrl] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("robot_ws") ?? "";
-  });
+  const [socketUrl, setSocketUrl] = useState("");
+
+  useEffect(() => {
+    const savedSocketUrl = localStorage.getItem("robot_ws");
+
+    if (savedSocketUrl) {
+      setSocketUrl(savedSocketUrl);
+    }
+  }, []);
 
   const send = useCallback((payload: unknown) => {
     if (!wsRef.current) return;
     if (wsRef.current.readyState !== WebSocket.OPEN) return;
 
+    // Always use the browser_command envelope so the gateway can distinguish
+    // commands from subscription messages.
     wsRef.current.send(
-      typeof payload === "string" ? payload : JSON.stringify(payload),
+      JSON.stringify({ type: "browser_command", payload }),
     );
   }, []);
 
@@ -183,6 +194,12 @@ export function RobotProvider({
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+
+        // Gateway system events
+        if (msg.type === "nodered_status") {
+          setNoderedOnline(Boolean(msg.online));
+          return;
+        }
 
         switch (msg.topic) {
           case "flow": {
@@ -275,6 +292,8 @@ export function RobotProvider({
     () => ({
       connected,
 
+      noderedOnline,
+
       flow,
 
       battery,
@@ -299,6 +318,7 @@ export function RobotProvider({
     }),
     [
       connected,
+      noderedOnline,
       flow,
       battery,
       current_poi,

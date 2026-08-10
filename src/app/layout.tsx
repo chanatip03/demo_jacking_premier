@@ -1,5 +1,5 @@
 import "./globals.css";
-import { RobotProvider } from "./providers/robot.provider";
+import { RobotProvider } from "../providers/robot.provider";
 
 export default function RootLayout({
   children,
