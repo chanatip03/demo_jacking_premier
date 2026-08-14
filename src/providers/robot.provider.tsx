@@ -11,83 +11,23 @@ import {
   ReactNode,
 } from "react";
 
-export interface FlowNode {
-  id?: string;
-  type?: string;
-  label?: string;
-  name?: string;
-  z?: string;
-
-  rules?: SwitchRule[];
-  wires?: string[][];
-  poi?: string;
-  operation?: string;
-  payload?: string;
-
-  [key: string]: unknown;
-}
-
-export interface BatteryData {
-  soc: number;
-  is_charging: boolean;
-}
-
-export interface TaskData {
-  id?: string;
-  state?: string;
-  target?: string;
-}
-
-export interface SwitchRule {
-  t: string;
-  v: string;
-  vt: string;
-}
-
-export interface CurrentPOI {
-  POI: string;
-  LPOI: string;
-  x: number;
-  y: number;
-  angle: number;
-  confidence: number;
-}
-
-export interface MapData {
-  name: string;
-}
-
-export interface SpeedData {
-  is_stop: boolean;
-  vx: number;
-  vy: number;
-  w: number;
-  r_vx: number;
-  r_vy: number;
-  r_w: number;
-  ret_code: number;
-  create_on: string;
-  err_msg: string;
-}
-
-export type ConnectionState = "connecting" | "connected" | "closed" | "error";
-
-export interface RobotStatusLog {
-  id: number;
-  data: unknown;
-}
+import { FlowNode } from "@/core/interface/flow";
+import { BatteryData } from "@/core/interface/battery";
+import { RobotStatusLog } from "@/core/interface/log";
+import { CurrentPOI } from "@/core/interface/poi";
+import { SpeedData } from "@/core/interface/speed";
+import { connectionStates } from "@/core/types/status";
 
 interface RobotContextType {
-  connected: ConnectionState;
+  connected: connectionStates;
 
-  /** Whether Node-RED is currently registered with the gateway. */
   noderedOnline: boolean;
 
   flow: FlowNode[];
 
   battery: BatteryData | null;
 
-  map: MapData | null;
+  map: { name: string } | null;
 
   current_poi: CurrentPOI | null;
 
@@ -101,7 +41,7 @@ interface RobotContextType {
 
   setSocketUrl: (url: string) => void;
 
-  send: (payload: unknown) => void;
+  send: (payload: object) => void;
 
   reconnect: () => void;
 }
@@ -117,14 +57,14 @@ export function RobotProvider({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldReconnectRef = useRef(true);
 
-  const [connected, setConnected] = useState<ConnectionState>("connecting");
+  const [connected, setConnected] = useState<connectionStates>("connecting");
   const [noderedOnline, setNoderedOnline] = useState(false);
 
   const [flow, setFlow] = useState<FlowNode[]>([]);
 
   const [battery, setBattery] = useState<BatteryData | null>(null);
 
-  const [map, setMap] = useState<MapData | null>(null);
+  const [map, setMap] = useState<{ name: string } | null>(null);
 
   const [current_poi, setCurrent_poi] = useState<CurrentPOI | null>(null);
 
@@ -145,15 +85,11 @@ export function RobotProvider({
     }
   }, []);
 
-  const send = useCallback((payload: unknown) => {
+  const send = useCallback((payload: object) => {
     if (!wsRef.current) return;
     if (wsRef.current.readyState !== WebSocket.OPEN) return;
 
-    // Always use the browser_command envelope so the gateway can distinguish
-    // commands from subscription messages.
-    wsRef.current.send(
-      JSON.stringify({ type: "browser_command", payload }),
-    );
+    wsRef.current.send(JSON.stringify(payload));
   }, []);
 
   const connect = useCallback(() => {
@@ -233,7 +169,7 @@ export function RobotProvider({
             break;
 
           case "speed":
-            setSpeed(msg.data);
+            setSpeed(msg.data?.speed ?? msg.data);
             break;
 
           case "robot_status":
@@ -265,7 +201,7 @@ export function RobotProvider({
       setConnected("closed");
 
       if (shouldReconnectRef.current) {
-        reconnectTimerRef.current = setTimeout(connect, 3000);
+        reconnectTimerRef.current = setTimeout(connect, 5000);
       }
     };
 
@@ -328,6 +264,7 @@ export function RobotProvider({
       map,
       rec_file,
       robotStatusLogs,
+      speed,
     ],
   );
 

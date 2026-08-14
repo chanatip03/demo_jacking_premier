@@ -1,8 +1,7 @@
-import type { QueueStep, SavedRoute } from "../types";
-import { QUEUE_STORAGE_KEY, ROUTES_STORAGE_KEY } from "../constants";
+import type { QueueStep ,SavedRoute} from "@/core/interface/queue";
 
-const QUEUE_KEY = QUEUE_STORAGE_KEY;
-const ROUTE_KEY = ROUTES_STORAGE_KEY;
+const QUEUE_KEY = "Storage_key";
+const ROUTE_KEY =  "Storage_key";
 
 export function storageKeyFor(
   base: string,

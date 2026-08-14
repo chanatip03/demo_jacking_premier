@@ -14,3 +14,20 @@ export function formatLogData(data: unknown): string {
     return String(data);
   }
 }
+
+/**
+ * คำนวณความเร็วเชิงเส้น (m/s) จาก vx, vy
+ * speed = √(vx² + vy²)
+ */
+export function computeLinearSpeed(vx: number, vy: number): number {
+ const speed = Math.sqrt(vx * vx + vy * vy);
+  return Number(speed.toFixed(2))
+}
+
+/**
+ * คำนวณความเร็วเชิงมุม (rad/s) จาก w
+ * ค่าติดลบ = หมุนซ้าย, ค่าบวก = หมุนขวา
+ */
+export function computeAngularVelocity(w: number): number {
+  return w;
+}

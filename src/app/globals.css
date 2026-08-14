@@ -19,8 +19,48 @@
   }
 }
 
+/* ─── Base: scale html font-size so rem scales everywhere ─── */
+html {
+  font-size: clamp(10px, 1.35vw, 20px);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: sans-serif;
+}
+
+/* ─── Large desktop boost ─── */
+@media screen and (min-width: 1440px) {
+  html {
+    font-size: clamp(16px, 1.35vw, 20px);
+  }
+}
+
+/* ─── Small landscape screens (phones in landscape) ─── */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+  html {
+    font-size: clamp(7px, 2.5vh, 11px);
+  }
+}
+
+/* ─── Mobile portrait → force landscape ─── */
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  html {
+    transform: rotate(90deg);
+    transform-origin: left top;
+    width: 100vh;
+    height: 100vw;
+    overflow-x: hidden;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    font-size: clamp(7px, 2.5vw, 11px);
+  }
+
+  body {
+    width: 100vh;
+    height: 100vw;
+    overflow: hidden;
+  }
 }
