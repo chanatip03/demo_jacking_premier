@@ -44,6 +44,8 @@ interface RobotContextType {
   send: (payload: object) => void;
 
   reconnect: () => void;
+
+  connectionEpoch: number;
 }
 
 const RobotContext = createContext<RobotContextType | null>(null);
@@ -55,9 +57,13 @@ export function RobotProvider({
 }>) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shouldReconnectRef = useRef(true);
 
-  const [connected, setConnected] = useState<connectionStates>("connecting");
+  // false = ยังไม่กด Connect
+  // true = เคยกด Connect แล้ว สามารถ reconnect อัตโนมัติได้
+  const shouldReconnectRef = useRef(false);
+
+  const [connected, setConnected] = useState<connectionStates>("closed");
+
   const [noderedOnline, setNoderedOnline] = useState(false);
 
   const [flow, setFlow] = useState<FlowNode[]>([]);
@@ -73,10 +79,16 @@ export function RobotProvider({
   const [speed, setSpeed] = useState<SpeedData | null>(null);
 
   const [robotStatusLogs, setRobotStatusLogs] = useState<RobotStatusLog[]>([]);
+
   const robotStatusLogIdRef = useRef(0);
 
   const [socketUrl, setSocketUrl] = useState("");
 
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const autoConnectedRef = useRef(false);
+
+  // โหลด URL ที่เคยบันทึกไว้
+  // แต่จะยังไม่ connect
   useEffect(() => {
     const savedSocketUrl = localStorage.getItem("robot_ws");
 
@@ -87,21 +99,32 @@ export function RobotProvider({
 
   const send = useCallback((payload: object) => {
     if (!wsRef.current) return;
+
     if (wsRef.current.readyState !== WebSocket.OPEN) return;
 
     wsRef.current.send(JSON.stringify(payload));
   }, []);
 
   const connect = useCallback(() => {
-    if (!socketUrl) return;
+    if (!socketUrl) {
+      console.warn("WebSocket URL is empty");
+      return;
+    }
 
+    // กด Connect แล้ว ถึงจะอนุญาตให้ reconnect
     shouldReconnectRef.current = true;
+
+    // ล้าง reconnect timer เก่า
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
 
-    wsRef.current?.close();
+    // ถ้ามี socket เก่าอยู่ ให้ปิดก่อน
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
 
     setConnected("connecting");
 
@@ -110,6 +133,7 @@ export function RobotProvider({
     socket.onopen = () => {
       setConnected("connected");
 
+      setConnectionEpoch((prev) => prev + 1);
       localStorage.setItem("robot_ws", socketUrl);
 
       socket.send(
@@ -140,6 +164,7 @@ export function RobotProvider({
         switch (msg.topic) {
           case "flow": {
             let data = msg.data;
+
             if (typeof data === "string") {
               try {
                 data = JSON.parse(data);
@@ -164,6 +189,7 @@ export function RobotProvider({
           case "map":
             setMap(msg.data);
             break;
+
           case "rec_file":
             setRec_file(msg.data);
             break;
@@ -174,6 +200,7 @@ export function RobotProvider({
 
           case "robot_status":
             robotStatusLogIdRef.current += 1;
+
             setRobotStatusLogs((previous) => [
               ...previous.slice(-49),
               {
@@ -181,6 +208,7 @@ export function RobotProvider({
                 data: msg.data.message,
               },
             ]);
+
             break;
 
           default:
@@ -199,30 +227,45 @@ export function RobotProvider({
       if (wsRef.current !== socket) return;
 
       setConnected("closed");
+      wsRef.current = null;
 
+      // reconnect เฉพาะกรณีที่ user เคยกด Connect
       if (shouldReconnectRef.current) {
-        reconnectTimerRef.current = setTimeout(connect, 5000);
+        reconnectTimerRef.current = setTimeout(() => {
+          connect();
+        }, 5000);
       }
     };
 
     wsRef.current = socket;
   }, [socketUrl]);
 
+  // Cleanup ตอน component/provider ถูกถอดออก
+  //
+  // สำคัญ:
+  // ไม่มี connect() ตรงนี้
+  // ดังนั้นเปิดหน้าเว็บแล้วจะยังไม่ connect
   useEffect(() => {
-    shouldReconnectRef.current = true;
-
-    if (socketUrl) connect();
-
     return () => {
       shouldReconnectRef.current = false;
+
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [connect, socketUrl]);
+  }, []);
+
+  useEffect(() => {
+    if (autoConnectedRef.current) return;
+    if (!socketUrl) return;
+
+    autoConnectedRef.current = true;
+    connect();
+  }, [socketUrl, connect]);
 
   const value = useMemo(
     () => ({
@@ -250,7 +293,10 @@ export function RobotProvider({
 
       send,
 
+      // ปุ่ม Connect จะเรียก connect()
       reconnect: connect,
+
+      connectionEpoch,
     }),
     [
       connected,
@@ -258,13 +304,14 @@ export function RobotProvider({
       flow,
       battery,
       current_poi,
+      map,
+      rec_file,
+      speed,
+      robotStatusLogs,
       socketUrl,
       send,
       connect,
-      map,
-      rec_file,
-      robotStatusLogs,
-      speed,
+      connectionEpoch,
     ],
   );
 

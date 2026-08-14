@@ -44,6 +44,7 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
     speed,
     robotStatusLogs,
     rec_file,
+    connectionEpoch,
   } = useRobot();
 
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -196,24 +197,24 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
     const steps: QueueStep[] =
       chain.length > 0
         ? chain.map((step, index) => ({
-          ...step,
-          key: `${jobId}-${step.id}-${index}`,
-          jobId,
-          label: button.text,
-          isJobStart: index === 0,
-        }))
-        : [
-          {
-            key: `${jobId}-manual`,
-            id: String(button.target.id ?? jobId),
-            poi: String(button.target.poi ?? ""),
-            type: String(button.target.type ?? "manual"),
-            operation: button.target.operation as string | undefined,
+            ...step,
+            key: `${jobId}-${step.id}-${index}`,
             jobId,
             label: button.text,
-            isJobStart: true,
-          },
-        ];
+            isJobStart: index === 0,
+          }))
+        : [
+            {
+              key: `${jobId}-manual`,
+              id: String(button.target.id ?? jobId),
+              poi: String(button.target.poi ?? ""),
+              type: String(button.target.type ?? "manual"),
+              operation: button.target.operation as string | undefined,
+              jobId,
+              label: button.text,
+              isJobStart: true,
+            },
+          ];
 
     pushLog("system", `Queued: ${button.text}`);
     setTaskQueue((previous) => [...previous, ...steps]);
@@ -407,7 +408,10 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
                   </span>
                 </div>
               )}
-              <RobotMap serverIP={serverIP} />
+              <RobotMap
+                key={`${serverIP}-${connectionEpoch}`}
+                serverIP={serverIP}
+              />
             </div>
 
             <div className="flex h-full w-[14vw] min-w-[10rem] shrink-0 flex-col border-l border-gray-200 min-h-0 overflow-y-auto">
