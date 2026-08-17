@@ -56,11 +56,11 @@ export function TaskQueuePanel({
     idx === 0 ? "current" : "pending";
 
   return (
-    <section className="flex shrink-0 flex-col gap-4 rounded-2xl border-t-4 border-amber-400 bg-white p-5 shadow-lg">
+    <section className="flex shrink-0 flex-col gap-4 rounded-2xl border-t-4 border-blue-900 bg-white p-5 shadow-lg">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
-            <h2 className="text-[1.5em] font-bold">Task Queue</h2>
+            <h2 className="text-[1.2em] font-bold text-blue-900">Task Queue</h2>
             <span
               className={`rounded-full px-2.5 py-0.5 text-[0.7em] font-semibold uppercase tracking-wide ${
                 isQueueRunning
@@ -86,61 +86,6 @@ export function TaskQueuePanel({
         </div>
       </div>
 
-      {savedRoutes.length > 0 && (
-        <div className="flex flex-col gap-2 border-b border-gray-100 pb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[0.7em] font-semibold uppercase text-gray-400">
-              Saved Routes:
-            </span>
-
-            {savedRoutes.map((route) => (
-              <div
-                key={route.id}
-                className="group flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 py-1 pl-3 pr-1 text-sm text-amber-700"
-              >
-                <button
-                  type="button"
-                  onClick={() => onAddRouteToQueue(route)}
-                  className="flex items-center gap-1 text-[0.8em] hover:underline"
-                  title={`Add "${route.name}" (${route.steps.length} steps) to the queue`}
-                >
-                  <PlaylistPlayIcon fontSize="small" />
-                  {route.name}
-                  <span className="text-amber-400">({route.steps.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onToggleRouteJson(route.id)}
-                  className={`flex h-5 w-5 items-center justify-center rounded-full hover:bg-amber-100 ${
-                    expandedRouteId === route.id
-                      ? "text-amber-800"
-                      : "text-amber-400"
-                  }`}
-                  aria-label={`View JSON for saved route ${route.name}`}
-                >
-                  <CodeIcon style={{ fontSize: 15 }} />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {expandedRouteId &&
-            (() => {
-              const route = savedRoutes.find(
-                (item) => item.id === expandedRouteId,
-              );
-              if (!route) return null;
-
-              return (
-                <pre className="max-h-48 overflow-auto rounded-lg bg-neutral-900 p-3 font-mono text-xs text-emerald-300">
-                  {JSON.stringify(route.steps, null, 2)}
-                </pre>
-              );
-            })()}
-        </div>
-      )}
-
       {taskQueue.length === 0 ? (
         <p className="flex items-center gap-2 text-base text-gray-400">
           <PlaylistAddIcon fontSize="small" />
@@ -154,22 +99,9 @@ export function TaskQueuePanel({
             return (
               <div key={item.key} className="flex items-center gap-2">
                 <div
-                  className={`group relative min-w-[6rem] rounded-xl border px-3 py-3 font-mono text-[0.8em] transition-colors ${queueStatusStyle[status]}`}
+                  className={`group relative min-w-24 rounded-xl border px-3 py-3 font-mono text-[0.8em] transition-colors ${queueStatusStyle[status]}`}
                   title={item.label}
                 >
-                  {/*
-                    Delete button visibility:
-                    - Default: always visible (opacity-100) — correct for
-                      touch devices, which can't "hover" at all.
-                    - [@media(hover:hover)]: only devices that actually
-                      support a real hover (i.e. a mouse) get the
-                      fade-out-until-hover treatment.
-                    We deliberately do NOT use the `sm:` width breakpoint
-                    here: this app is used in landscape, where even phones
-                    report a CSS width well past 640px, so `sm:opacity-0`
-                    was wrongly treating touch users as "desktop" and
-                    hiding the button with no way to hover it back in.
-                  */}
                   <button
                     type="button"
                     onClick={() => onRemoveQueueItem(item.key)}
@@ -214,7 +146,7 @@ export function TaskQueuePanel({
             type="button"
             onClick={() => onControlClick(isPaused ? "resume" : "pause")}
             disabled={!isQueueRunning && !isPaused}
-            className="flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-50 px-3 py-1.5 text-[0.85em] text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            className="flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-50 px-3 py-1.5 text-[0.85em] text-amber-700 transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {isPaused ? (
               <>
@@ -230,7 +162,7 @@ export function TaskQueuePanel({
           <button
             type="button"
             onClick={onCancelClick}
-            className="flex items-center gap-1.5 rounded-xl border border-red-300 px-3 py-1.5 text-[0.85em] text-red-600 transition-colors hover:bg-red-50"
+            className="flex items-center gap-1.5 rounded-xl border border-red-300 px-3 py-1.5 text-[0.85em] bg-red-500 text-white transition-colors hover:bg-red-600"
           >
             <StopIcon fontSize="small" />
             Stop

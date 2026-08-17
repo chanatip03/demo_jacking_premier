@@ -25,9 +25,7 @@ function JackConfigForm({
   onChange,
 }: Readonly<JackConfigFormProps>) {
   return (
-    <div
-      className={`flex flex-col gap-5 rounded-2xl border bg-white p-6 shadow-sm`}
-    >
+    <div className={`flex flex-col gap-5 rounded-2xl bg-white p-6 shadow-sm`}>
       {/* Header */}
       <div className="flex items-center gap-3">
         <span
@@ -253,14 +251,14 @@ export function JackSettingsModal({
               <button
                 type="button"
                 onClick={handleClose}
-                className="rounded-xl border border-gray-200 px-5 py-2 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800"
+                className="rounded-xl border border-red-300 px-5 py-2 text-sm font-semibold shadow-sm transition-all bg-red-500 text-white hover:bg-red-600"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSave}
-                className="flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold shadow-sm transition-all bg-emerald-500 text-white"
+                className="flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold shadow-sm transition-all border-emerald-400 bg-emerald-500 hover:bg-emerald-600 text-white"
               >
                 <SaveIcon style={{ fontSize: 16 }} />
                 {saved ? "Saved!" : "Save Settings"}

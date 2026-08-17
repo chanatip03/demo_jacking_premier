@@ -11,7 +11,7 @@ const formatLogLine = (log: LogEntry) =>
 
 export function LogPanel({ logs, logEndRef }: Readonly<LogPanelProps>) {
   return (
-    <section className="flex flex-1 flex-col border-t-4 border-teal-400 bg-black text-white">
+    <section className="flex flex-1 flex-col bg-black text-white">
       <div className="flex shrink-0 items-center justify-between border-b border-neutral-700 px-3 py-2">
         <span className="font-mono text-[0.7em] uppercase tracking-[0.3em]">
           Log
@@ -29,4 +29,3 @@ export function LogPanel({ logs, logEndRef }: Readonly<LogPanelProps>) {
     </section>
   );
 }
-
