@@ -36,6 +36,9 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   let mapData = null, robotData = null;
   let chassisData = { head: 0.34, tail: 0.28, width: 0.56 };
   let minX=0, minY=0, maxX=0, maxY=0, baseScale=1, baseOffsetX=0, baseOffsetY=0;
+  // CSS-pixel size of the canvas box (NOT the same as canvas.width/height,
+  // which are scaled by devicePixelRatio — see calculateMapBounds()).
+  let cssWidth=0, cssHeight=0, dpr=1;
   let cameraZoom=1, cameraX=0, cameraY=0;
   let isDragging=false, lastMousePos={x:0,y:0};
   let auraProgress=0, lastFrameTime=0;
@@ -43,8 +46,12 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   let pcCanvas=null, pcCtx=null, pcScale=50, pcCurrentIndex=0, isPcRendered=false;
   let isShowLaser=false, laserData=null, latestLaserBuffer=null, ws=null;
   let isActionMode=false, hoveredPointName=null;
-  let initialPinchDistance=null, initialCameraZoom=1;
   let animFrameId=null;
+  let resizeObserver=null;
+
+  // multi-touch (pinch-zoom / two-finger pan) state
+  let activePointers = new Map(); // pointerId -> {x,y}
+  let pinchStartDistance = null, pinchStartZoom = 1, pinchStartMid = {x:0,y:0}, pinchStartCamera = {x:0,y:0};
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
   function showLoading(text) {
@@ -84,61 +91,143 @@ export function RobotMap({ serverIP }: RobotMapProps) {
     this.classList.toggle('amr-btn-active', isShowGrid);
   };
   document.getElementById('amr-btn-reset').onclick = resetView;
-
-  window.addEventListener('keydown', (e) => {
+  function handleKeyDown(e) {
     if (e.key === 'Escape' && isActionMode) {
       isActionMode = false;
       document.getElementById('amr-btn-action').classList.remove('amr-btn-active');
       canvas.style.cursor = 'grab';
       hoveredPointName = null;
     }
-  });
+  }
+  function handleWindowMouseUp() { isDragging = false; }
+  function handleWindowTouchEnd() {
+    isDragging = false;
+    pinchStartDistance = null;
+    activePointers.clear();
+  }
+  function handleWindowResize() {
+    if (mapData) { calculateMapBounds(); if (!isFocusRobot) zoomToPoints(); }
+  }
 
-  // ─── Mouse / Touch ────────────────────────────────────────────────────────
-  canvas.addEventListener('mousedown', (e) => {
-    isDragging = true; lastMousePos = { x: e.clientX, y: e.clientY };
-    if (isFocusRobot) resetFocusMode();
-  });
-  window.addEventListener('mouseup', () => isDragging = false);
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    applyZoom(e.clientX, e.clientY, 1 + ((e.deltaY > 0 ? -1 : 1) * 0.1));
-  }, { passive: false });
-  canvas.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      cameraX += e.clientX - lastMousePos.x;
-      cameraY += e.clientY - lastMousePos.y;
-      lastMousePos = { x: e.clientX, y: e.clientY };
-      return;
-    }
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('mouseup', handleWindowMouseUp);
+  window.addEventListener('touchend', handleWindowTouchEnd);
+  window.addEventListener('resize', handleWindowResize);
+
+  let resizePending = false;
+  if (canvas.parentElement && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      if (resizePending) return;
+      resizePending = true;
+      requestAnimationFrame(() => {
+        resizePending = false;
+        if (mapData) { calculateMapBounds(); if (!isFocusRobot) zoomToPoints(); }
+      });
+    });
+    resizeObserver.observe(canvas.parentElement);
+  }
+
+  // ─── Mouse / Touch (scoped to canvas; removed automatically when the
+  //     canvas element itself is unmounted, so these are safe as-is) ────────
+  // ─── Mouse / Touch ───────────────────────────────────────────────────────
+canvas.addEventListener('pointerdown', (e) => {
+  // รับเฉพาะ mouse ซ้าย หรือ touch
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+  canvas.setPointerCapture(e.pointerId);
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (isFocusRobot) {
+    resetFocusMode();
+  }
+
+  if (activePointers.size === 2) {
+    // เริ่ม pinch: หยุด single-finger drag ไว้ก่อน
+    isDragging = false;
+    const pts = Array.from(activePointers.values());
+    pinchStartDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    pinchStartZoom = cameraZoom;
+    pinchStartMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    pinchStartCamera = { x: cameraX, y: cameraY };
+  } else if (activePointers.size === 1) {
+    isDragging = true;
+    lastMousePos = { x: e.clientX, y: e.clientY };
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) {
+    if (!isDragging) simulateHover(e.clientX, e.clientY);
+    return;
+  }
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size >= 2 && pinchStartDistance) {
+    const pts = Array.from(activePointers.values());
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+
+    let newZoom = pinchStartZoom * (dist / pinchStartDistance);
+    newZoom = Math.max(0.1, Math.min(20, newZoom));
+
+    const rect = canvas.getBoundingClientRect();
+    const factor = newZoom / pinchStartZoom;
+    // ซูมรอบจุดกึ่งกลางตอนเริ่ม pinch แล้วเลื่อนตามการขยับของจุดกึ่งกลางสองนิ้ว (two-finger pan)
+    cameraX = (pinchStartMid.x - rect.left) - ((pinchStartMid.x - rect.left) - pinchStartCamera.x) * factor + (mid.x - pinchStartMid.x);
+    cameraY = (pinchStartMid.y - rect.top)  - ((pinchStartMid.y - rect.top)  - pinchStartCamera.y) * factor + (mid.y - pinchStartMid.y);
+    cameraZoom = newZoom;
+    return;
+  }
+
+  if (!isDragging) {
+    // ไม่ลาก = แค่ hover
     simulateHover(e.clientX, e.clientY);
-  });
-  canvas.addEventListener('touchstart', (e) => {
+    return;
+  }
+
+  cameraX += e.clientX - lastMousePos.x;
+  cameraY += e.clientY - lastMousePos.y;
+
+  lastMousePos = {
+    x: e.clientX,
+    y: e.clientY,
+  };
+});
+
+function releasePointer(e) {
+  activePointers.delete(e.pointerId);
+  if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+    canvas.releasePointerCapture(e.pointerId);
+  }
+  if (activePointers.size === 1) {
+    // เหลือนิ้วเดียว กลับไป drag ปกติโดยไม่ให้ภาพกระโดด
+    const remaining = Array.from(activePointers.values())[0];
+    isDragging = true;
+    lastMousePos = { x: remaining.x, y: remaining.y };
+    pinchStartDistance = null;
+  } else {
+    isDragging = false;
+    pinchStartDistance = null;
+  }
+}
+
+canvas.addEventListener('pointerup', releasePointer);
+canvas.addEventListener('pointercancel', releasePointer);
+
+// Mouse wheel = zoom
+canvas.addEventListener(
+  'wheel',
+  (e) => {
     e.preventDefault();
-    if (e.touches.length === 1) {
-      isDragging = true;
-      lastMousePos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      simulateHover(e.touches[0].clientX, e.touches[0].clientY);
-    } else if (e.touches.length === 2) {
-      isDragging = false;
-      initialPinchDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      initialCameraZoom = cameraZoom;
-    }
-  }, { passive: false });
-  window.addEventListener('touchend', () => { isDragging = false; initialPinchDistance = null; });
-  canvas.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    if (e.touches.length === 1 && isDragging) {
-      cameraX += e.touches[0].clientX - lastMousePos.x;
-      cameraY += e.touches[0].clientY - lastMousePos.y;
-      lastMousePos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    } else if (e.touches.length === 2 && initialPinchDistance) {
-      let dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      let cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      let cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      applyZoomAbsolute(cx, cy, initialCameraZoom * (dist / initialPinchDistance));
-    }
-  }, { passive: false });
+
+    applyZoom(
+      e.clientX,
+      e.clientY,
+      1 + ((e.deltaY > 0 ? -1 : 1) * 0.1)
+    );
+  },
+  { passive: false }
+);
 
   canvas.addEventListener('click', async (e) => {
     if (isActionMode && hoveredPointName) {
@@ -153,10 +242,6 @@ export function RobotMap({ serverIP }: RobotMapProps) {
         });
       } catch(err) { console.error('Navigation error:', err); }
     }
-  });
-
-  window.addEventListener('resize', () => {
-    if (mapData) { calculateMapBounds(); if (!isFocusRobot) zoomToPoints(); }
   });
 
   // ─── Camera helpers ───────────────────────────────────────────────────────
@@ -188,7 +273,7 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   function transformPoint(worldX, worldY) {
     return {
       cx: ((worldX - minX) * baseScale + baseOffsetX) * cameraZoom + cameraX,
-      cy: (canvas.height - ((worldY - minY) * baseScale + baseOffsetY)) * cameraZoom + cameraY
+      cy: (cssHeight - ((worldY - minY) * baseScale + baseOffsetY)) * cameraZoom + cameraY
     };
   }
 
@@ -208,11 +293,42 @@ export function RobotMap({ serverIP }: RobotMapProps) {
     let pad=maxR+2.0;
     let mX=Math.max((aMaxX-aMinX)*0.05,pad), mY=Math.max((aMaxY-aMinY)*0.05,pad);
     minX=aMinX-mX; maxX=aMaxX+mX; minY=aMinY-mY; maxY=aMaxY+mY;
-    canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight;
-    const scaleX=(canvas.width-30)/(maxX-minX), scaleY=(canvas.height-30)/(maxY-minY);
+
+    // ใช้ getBoundingClientRect() แทน offsetWidth/offsetHeight — บนมือถือที่มี
+    // dynamic viewport / DPR แปลกๆ (เช่น Z Flip) ค่านี้แม่นกว่าและตรงกับสิ่งที่
+    // ผู้ใช้เห็นจริงบนจอ
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+
+    if (window.__AMR_DEBUG__ !== false) {
+      console.log('[RobotMap] canvas size', { width, height, dpr: window.devicePixelRatio, rect });
+    }
+
+    // จอเล็ก / container ยัง layout ไม่นิ่ง → width/height อาจเป็น 0 ชั่วคราว
+    // ถ้าปล่อยผ่านไปเลยจะได้ baseScale = Infinity/NaN แล้วไม่มีอะไรมา retry ทำให้
+    // canvas ว่างเปล่าตลอดไป จึงรอเฟรมถัดไปแล้วลองคำนวณใหม่แทน
+    if (width <= 0 || height <= 0) {
+      requestAnimationFrame(() => {
+        calculateMapBounds();
+        if (!isFocusRobot) zoomToPoints();
+      });
+      return;
+    }
+
+    cssWidth = width; cssHeight = height;
+    dpr = window.devicePixelRatio || 1;
+    // canvas.width/height ต้องเป็น physical pixel (CSS size * DPR) เพื่อความคมชัด
+    // บนจอ high-DPI (รวมถึง Z Flip 6) แล้วใช้ setTransform ให้โค้ดวาดทั้งหมดยังคง
+    // คิดเป็นหน่วย CSS pixel เหมือนเดิมโดยไม่ต้องแก้ทุกจุดที่วาด
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const scaleX=(width-30)/(maxX-minX), scaleY=(height-30)/(maxY-minY);
     baseScale=Math.min(scaleX,scaleY);
-    baseOffsetX=(canvas.width-((maxX-minX)*baseScale))/2;
-    baseOffsetY=(canvas.height-((maxY-minY)*baseScale))/2;
+    baseOffsetX=(width-((maxX-minX)*baseScale))/2;
+    baseOffsetY=(height-((maxY-minY)*baseScale))/2;
   }
 
   function zoomToPoints() {
@@ -228,13 +344,13 @@ export function RobotMap({ serverIP }: RobotMapProps) {
     let pad=Math.max(chassisData.head,chassisData.tail,chassisData.width/2)+2.0;
     pMinX-=pad;pMaxX+=pad;pMinY-=pad;pMaxY+=pad;
     let bxMin=(pMinX-minX)*baseScale+baseOffsetX, bxMax=(pMaxX-minX)*baseScale+baseOffsetX;
-    let byMin=canvas.height-((pMaxY-minY)*baseScale+baseOffsetY), byMax=canvas.height-((pMinY-minY)*baseScale+baseOffsetY);
+    let byMin=cssHeight-((pMaxY-minY)*baseScale+baseOffsetY), byMax=cssHeight-((pMinY-minY)*baseScale+baseOffsetY);
     let p=40;
-    let zX=(canvas.width-p*2)/(bxMax-bxMin), zY=(canvas.height-p*2)/(byMax-byMin);
+    let zX=(cssWidth-p*2)/(bxMax-bxMin), zY=(cssHeight-p*2)/(byMax-byMin);
     cameraZoom=Math.max(1,Math.min(zX,zY));
     let cX=(bxMin+bxMax)/2, cY=(byMin+byMax)/2;
-    cameraX=(canvas.width/2)-(cX*cameraZoom);
-    cameraY=(canvas.height/2)-(cY*cameraZoom);
+    cameraX=(cssWidth/2)-(cX*cameraZoom);
+    cameraY=(cssHeight/2)-(cY*cameraZoom);
   }
 
   // ─── Hover detection ──────────────────────────────────────────────────────
@@ -295,11 +411,13 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   async function fetchRobotLocation() {
     try {
       const res = await fetch(ROBOT_API);
-      if (!res.ok) return;
+      if (!res.ok) { console.warn('[RobotMap] robot_location not ok:', res.status); return; }
       robotData = await res.json();
       if (latestLaserBuffer) laserData = latestLaserBuffer;
       updateFooterUI();
-    } catch(e){}
+    } catch(e) {
+      console.warn('[RobotMap] robot_location fetch failed:', e);
+    }
   }
 
   function updateFooterUI() {
@@ -504,10 +622,13 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   function draw() {
     if (!mapData) return;
     if (isFocusRobot && robotData) {
-      let bCx=(robotData.x-minX)*baseScale+baseOffsetX, bCy=canvas.height-((robotData.y-minY)*baseScale+baseOffsetY);
-      cameraX=(canvas.width/2)-(bCx*cameraZoom); cameraY=(canvas.height/2)-(bCy*cameraZoom);
+      let bCx=(robotData.x-minX)*baseScale+baseOffsetX, bCy=cssHeight-((robotData.y-minY)*baseScale+baseOffsetY);
+      cameraX=(cssWidth/2)-(bCx*cameraZoom); cameraY=(cssHeight/2)-(bCy*cameraZoom);
     }
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // canvas.width/height คือ physical pixel (คูณ dpr แล้ว) ส่วน ctx ถูก
+    // setTransform(dpr,...) ไว้ ดังนั้นพิกัดที่ใช้กับ ctx ต้องเป็นหน่วย CSS
+    // pixel (cssWidth/cssHeight) ไม่ใช่ canvas.width/height ดิบๆ
+    ctx.clearRect(0,0,cssWidth,cssHeight);
     if(isShowGrid)drawGrid();
     drawOrigin();
     if(isShowPointCloud&&pcCanvas&&isPcRendered)drawPointCloudFromBitmap();
@@ -524,34 +645,81 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   }
 
   // ─── Init ─────────────────────────────────────────────────────────────────
+  function showFatalError(msg) {
+    console.error('[RobotMap]', msg);
+    loadingText.innerText = msg;
+    loadingOverlay.style.display = 'flex';
+    // swap spinner styling so it reads as an error, not a stuck loader
+    const spinner = loadingOverlay.querySelector('div');
+    if (spinner) spinner.style.display = 'none';
+  }
+
   async function init() {
     showLoading('Loading map…');
     try {
-      const cr=await fetch(CHASSIS_API);
-      if(cr.ok){const cd=await cr.json();if(cd.head!==undefined)chassisData=cd;}
-    } catch(e){}
-    setTimeout(async()=>{
+      const cr = await fetch(CHASSIS_API);
+      if (cr.ok) {
+        const cd = await cr.json();
+        if (cd.head !== undefined) chassisData = cd;
+      } else {
+        console.warn('[RobotMap] chassis fetch not ok:', cr.status, CHASSIS_API);
+      }
+    } catch (e) {
+      // Non-fatal — chassis has sane defaults — but surface it so it's
+      // visible instead of silently swallowed.
+      console.warn('[RobotMap] chassis fetch failed:', e, CHASSIS_API);
+    }
+
+    setTimeout(async () => {
       try {
-        const mr=await fetch(MAP_API);
-        if(!mr.ok)throw new Error();
-        const mj=await mr.json();
-        if(mj.success){
-          mapData=typeof mj.robot_response_json==='string'?JSON.parse(mj.robot_response_json):mj.robot_response_json;
-          calculateMapBounds();zoomToPoints();
-          startBackgroundPcCache();
-          fetchRobotLocation();setInterval(fetchRobotLocation,1000);
-          connectLaserWS();
-          requestAnimationFrame(renderLoop);
+        const mr = await fetch(MAP_API);
+        if (!mr.ok) {
+          showFatalError('Map load failed: HTTP ' + mr.status + ' — ' + MAP_API);
+          return;
         }
-      } catch(e){}
-      hideLoading();
-    },100);
+        const mj = await mr.json();
+        if (!mj.success) {
+          showFatalError('Map API returned success:false — ' + (mj.message || JSON.stringify(mj)));
+          return;
+        }
+        mapData = typeof mj.robot_response_json === 'string'
+          ? JSON.parse(mj.robot_response_json)
+          : mj.robot_response_json;
+
+        if (!mapData) {
+          showFatalError('Map response had no robot_response_json payload');
+          return;
+        }
+
+        calculateMapBounds();
+        zoomToPoints();
+        startBackgroundPcCache();
+        fetchRobotLocation();
+        setInterval(fetchRobotLocation, 1000);
+        connectLaserWS();
+        requestAnimationFrame(renderLoop);
+        hideLoading();
+      } catch (e) {
+        // This is the case that used to fail completely silently: network
+        // error, CORS block, JSON parse error, mixed-content block, etc.
+        // Surfacing it is the whole point of this change.
+        showFatalError('Map load error: ' + (e && e.message ? e.message : String(e)) + ' — ' + MAP_API);
+      }
+    }, 100);
   }
 
-  // store cleanup handle on window for React unmount
+  // store cleanup handle on window for React unmount.
+  // Also tears down the window-level listeners and the ResizeObserver
+  // registered above, so remounting this component (e.g. on reconnect)
+  // never leaves stale listeners referencing a removed canvas behind.
   window.__amrMapCleanup = () => {
     if(animFrameId)cancelAnimationFrame(animFrameId);
     if(ws)ws.close();
+    if(resizeObserver)resizeObserver.disconnect();
+    window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('mouseup', handleWindowMouseUp);
+    window.removeEventListener('touchend', handleWindowTouchEnd);
+    window.removeEventListener('resize', handleWindowResize);
   };
 
   init();
@@ -572,6 +740,7 @@ export function RobotMap({ serverIP }: RobotMapProps) {
     return () => {
       if (typeof window.__amrMapCleanup === "function") {
         window.__amrMapCleanup();
+        window.__amrMapCleanup = undefined;
       }
       document.getElementById("amr-map-script")?.remove();
     };
@@ -581,7 +750,7 @@ export function RobotMap({ serverIP }: RobotMapProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Canvas area */}
-      <div className="relative min-h-0 flex-1 bg-[#fafafa]">
+      <div className="relative min-h-0 flex-1 bg-[#fafafa] overflow-hidden">
         {/* Loading overlay */}
         <div
           id="amr-loading-overlay"
@@ -597,11 +766,13 @@ export function RobotMap({ serverIP }: RobotMapProps) {
           </p>
         </div>
 
-        {/* Map canvas */}
+        {/* Map canvas — absolute so its internal buffer resizing can never
+            feed back into (and inflate) the flex parent's box size */}
         <canvas
           ref={canvasRef}
           id="amr-map-canvas"
-          className="h-full w-full cursor-grab"
+          className="absolute inset-0 block h-full w-full cursor-grab"
+          style={{ touchAction: "none" }}
         />
 
         {/* Overlay control buttons */}
@@ -690,6 +861,7 @@ export function RobotMap({ serverIP }: RobotMapProps) {
             },
           ].map((btn) => (
             <button
+              type="button"
               key={btn.id}
               id={btn.id}
               title={btn.title}

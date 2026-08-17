@@ -62,16 +62,29 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
   const [speedValue, setSpeedValue] = useState(SPEED_DEFAULT);
 
-  const serverIP = socketUrl
-    .replace(/^wss?:\/\//, "")
-    .split("/")[0]
-    .split(":")[0];
+  // const serverIP = socketUrl
+  //   .replace(/^wss?:\/\//, "")
+  //   .split("/")[0]
+  //   .split(":")[0];
 
-  const parseArrivedPOI = (message: string) => {
-    const match = message.match(/^Arrived At\s*:\s*(.+)$/i);
+  const getServerIP = (value: string) => {
+    try {
+      const normalized = /^wss?:\/\//i.test(value) ? value : `ws://${value}`;
 
-    return match?.[1]?.trim() ?? null;
+      return new URL(normalized).hostname;
+    } catch {
+      return "";
+    }
   };
+
+  const serverIP = getServerIP(socketUrl);
+
+  const [mapServerIP, setMapServerIP] = useState(serverIP);
+
+  useEffect(() => {
+    setMapServerIP(serverIP);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionEpoch]);
 
   const pushLog = (kind: LogEntry["kind"], text: string) => {
     idRef.current += 1;
@@ -106,6 +119,57 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
     saveRoutesToStorage(tabName, socketUrl, savedRoutes);
   }, [savedRoutes, tabName, socketUrl]);
 
+  // useEffect(() => {
+  //   const newStatusLogs = robotStatusLogs.filter(
+  //     (entry) => entry.id > lastRobotStatusLogIdRef.current,
+  //   );
+
+  //   if (newStatusLogs.length === 0) return;
+
+  //   lastRobotStatusLogIdRef.current =
+  //     newStatusLogs[newStatusLogs.length - 1].id;
+
+  //   setLogs((previous) => {
+  //     const receivedLogs: LogEntry[] = newStatusLogs.map((entry) => {
+  //       idRef.current += 1;
+
+  //       return {
+  //         id: idRef.current,
+  //         kind: "received",
+  //         text: `robot_status: ${formatLogData(entry.data)}`,
+  //         time: new Date().toLocaleTimeString("en-GB", {
+  //           hour12: false,
+  //         }),
+  //       };
+  //     });
+
+  //     return [...previous, ...receivedLogs].slice(-50);
+  //   });
+
+  //   // เช็คว่า robot เดินทางถึง POI ไหน
+  //   newStatusLogs.forEach((entry) => {
+  //     const message = entry.data;
+
+  //     if (typeof message !== "string") return;
+
+  //     const arrivedPOI = parseArrivedPOI(message);
+
+  //     if (!arrivedPOI) return;
+
+  //     setTaskQueue((previous) => {
+  //       const currentStep = previous[0];
+
+  //       if (!currentStep) return previous;
+
+  //       if (currentStep.poi !== arrivedPOI) {
+  //         return previous;
+  //       }
+
+  //       return previous.slice(1);
+  //     });
+  //   });
+  // }, [robotStatusLogs]);
+
   useEffect(() => {
     const newStatusLogs = robotStatusLogs.filter(
       (entry) => entry.id > lastRobotStatusLogIdRef.current,
@@ -133,27 +197,21 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
       return [...previous, ...receivedLogs].slice(-50);
     });
 
-    // เช็คว่า robot เดินทางถึง POI ไหน
+    // เช็ค success แล้ว pop queue
     newStatusLogs.forEach((entry) => {
       const message = entry.data;
 
       if (typeof message !== "string") return;
 
-      const arrivedPOI = parseArrivedPOI(message);
+      if (message.toLowerCase().includes("success")) {
+        setTaskQueue((previous) => {
+          if (previous.length === 0) return previous;
 
-      if (!arrivedPOI) return;
+          return previous.slice(1);
+        });
 
-      setTaskQueue((previous) => {
-        const currentStep = previous[0];
-
-        if (!currentStep) return previous;
-
-        if (currentStep.poi !== arrivedPOI) {
-          return previous;
-        }
-
-        return previous.slice(1);
-      });
+        return;
+      }
     });
   }, [robotStatusLogs]);
 
@@ -184,7 +242,7 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
   const sendMsg = useCallback(
     (topic: string, payload: Record<string, unknown> = {}) => {
       const envelope = { topic, payload };
-      pushLog("sent", JSON.stringify(envelope));
+      pushLog("sent", JSON.stringify(topic));
       send(envelope);
     },
     [send],
@@ -318,13 +376,13 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
   }, [taskQueue, isQueueRunning, isPaused, send, sendMsg]);
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-gray-50">
-      <header className="flex items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-gray-50">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
         {/* Left: Jack Settings */}
         <JackSettingsModal recFiles={rec_file} />
 
         {/* Right: Connection controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={socketUrl}
             onChange={(event) => setSocketUrl(event.target.value)}
@@ -351,10 +409,9 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
-        {/* LEFT COLUMN */}
-        <div className="flex w-[42%] shrink-0 flex-col overflow-hidden">
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+        <div className="flex min-h-0 min-w-60 max-w-[38%] shrink basis-104 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
             <div className="flex items-start content-start">
               <StatusPanels
                 battery={battery}
@@ -393,32 +450,30 @@ export default function LandingPage({ tabName }: Readonly<LandingPageProps>) {
           </div>
         </div>
 
-        {/* RIGHT COLUMN — map + log side by side */}
-        {serverIP && (
-          <div className="flex min-w-0 flex-1 border-l border-gray-200">
-            {/* Map */}
-            <div className="flex min-w-0 flex-1 flex-col bg-white">
-              {map?.name && (
-                <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5">
-                  <span className="text-[0.75em] font-semibold uppercase tracking-wide text-gray-400">
-                    Map
-                  </span>
-                  <span className="text-[0.75em] font-medium text-gray-600">
-                    {map.name}
-                  </span>
-                </div>
-              )}
-              <RobotMap
-                key={`${serverIP}-${connectionEpoch}`}
-                serverIP={serverIP}
-              />
-            </div>
-
-            <div className="flex h-full w-[14vw] min-w-[10rem] shrink-0 flex-col border-l border-gray-200 min-h-0 overflow-y-auto">
-              <LogPanel logs={logs} logEndRef={logEndRef} />
-            </div>
+        {/* MAP — only rendered once we know a server IP.
+            min-w-0 lets it shrink below its content size instead
+            of forcing the row to overflow. */}
+        {mapServerIP && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-gray-200 bg-white">
+            {map?.name && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5">
+                <span className="text-[0.75em] font-semibold uppercase tracking-wide text-gray-400">
+                  Map
+                </span>
+                <span className="text-[0.75em] font-medium text-gray-600">
+                  {map.name}
+                </span>
+              </div>
+            )}
+            <RobotMap
+              key={`${mapServerIP}-${connectionEpoch}`}
+              serverIP={mapServerIP}
+            />
           </div>
         )}
+        <div className="flex min-h-0 w-52 min-w-36 shrink-0 flex-col overflow-y-auto border-l border-gray-200">
+          <LogPanel logs={logs} logEndRef={logEndRef} />
+        </div>
       </div>
     </main>
   );

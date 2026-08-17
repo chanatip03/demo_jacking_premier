@@ -8,7 +8,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="flex h-screen">
+      <body className="flex h-dvh">
         <RobotProvider>
           <main className="min-w-0 flex-1">{children}</main>
         </RobotProvider>

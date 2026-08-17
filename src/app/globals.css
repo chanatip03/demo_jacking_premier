@@ -12,14 +12,11 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-/* ─── Base: scale html font-size so rem scales everywhere ─── */
+/* ─────────────────────────────────────────────
+   Base: scale html font-size so rem/em scales
+   EVERY component consistently (widths, gaps,
+   paddings, icons, text all use em/rem below).
+───────────────────────────────────────────── */
 html {
   font-size: clamp(10px, 1.35vw, 20px);
 }
@@ -28,6 +25,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: sans-serif;
+  overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 /* ─── Large desktop boost ─── */
@@ -37,10 +41,24 @@ body {
   }
 }
 
+/* ─── Tablet / small laptop landscape ─── */
+@media screen and (min-width: 769px) and (max-width: 1439px) and (orientation: landscape) {
+  html {
+    font-size: clamp(9px, 1.6vw, 15px);
+  }
+}
+
 /* ─── Small landscape screens (phones in landscape) ─── */
 @media screen and (max-height: 500px) and (orientation: landscape) {
   html {
-    font-size: clamp(7px, 2.5vh, 11px);
+    font-size: clamp(7px, 2.4vh, 12px);
+  }
+}
+
+/* ─── Very short landscape phones (small phones, notch etc.) ─── */
+@media screen and (max-height: 380px) and (orientation: landscape) {
+  html {
+    font-size: clamp(6px, 2.1vh, 10px);
   }
 }
 
@@ -55,7 +73,7 @@ body {
     position: absolute;
     top: 100%;
     left: 0;
-    font-size: clamp(7px, 2.5vw, 11px);
+    font-size: clamp(7px, 2.4vw, 11px);
   }
 
   body {
@@ -63,4 +81,26 @@ body {
     height: 100vw;
     overflow: hidden;
   }
+}
+
+/* ─── Very narrow phones in portrait (after rotation, "width" is short) ─── */
+@media screen and (max-width: 380px) and (orientation: portrait) {
+  html {
+    font-size: clamp(6px, 2.1vw, 9px);
+  }
+}
+
+/* ─── Thin scrollbars so panels don't lose extra space on small screens ─── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }

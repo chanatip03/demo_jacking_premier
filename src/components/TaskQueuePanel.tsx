@@ -5,6 +5,7 @@ import CodeIcon from "@mui/icons-material/Code";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import StopIcon from "@mui/icons-material/Stop";
+import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 import type {
   SavedRoute,
   QueueStatus,
@@ -61,15 +62,17 @@ export function TaskQueuePanel({
           <div className="flex items-center gap-3">
             <h2 className="text-[1.5em] font-bold">Task Queue</h2>
             <span
-              className={`rounded-full px-2.5 py-0.5 text-[0.7em] font-semibold uppercase tracking-wide ${isQueueRunning
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-gray-100 text-gray-500"
-                }`}
+              className={`rounded-full px-2.5 py-0.5 text-[0.7em] font-semibold uppercase tracking-wide ${
+                isQueueRunning
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-gray-100 text-gray-500"
+              }`}
             >
               {isQueueRunning ? "Running" : "Idle"}
             </span>
           </div>
         </div>
+
         <div className="flex items-center gap-3">
           {taskQueue.length > 0 && (
             <button
@@ -89,6 +92,7 @@ export function TaskQueuePanel({
             <span className="text-[0.7em] font-semibold uppercase text-gray-400">
               Saved Routes:
             </span>
+
             {savedRoutes.map((route) => (
               <div
                 key={route.id}
@@ -104,13 +108,15 @@ export function TaskQueuePanel({
                   {route.name}
                   <span className="text-amber-400">({route.steps.length})</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => onToggleRouteJson(route.id)}
-                  className={`flex h-5 w-5 items-center justify-center rounded-full hover:bg-amber-100 ${expandedRouteId === route.id
-                    ? "text-amber-800"
-                    : "text-amber-400"
-                    }`}
+                  className={`flex h-5 w-5 items-center justify-center rounded-full hover:bg-amber-100 ${
+                    expandedRouteId === route.id
+                      ? "text-amber-800"
+                      : "text-amber-400"
+                  }`}
                   aria-label={`View JSON for saved route ${route.name}`}
                 >
                   <CodeIcon style={{ fontSize: 15 }} />
@@ -141,30 +147,51 @@ export function TaskQueuePanel({
           No tasks in queue - click a task button below to add one
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {taskQueue.map((item, idx) => {
             const status = getStepStatus(idx);
 
             return (
-              <div
-                key={item.key}
-                className={`group relative min-w-[6rem] rounded-xl border px-3 py-3 font-mono text-[0.8em] transition-colors ${queueStatusStyle[status]}`}
-                title={item.label}
-              >
-                <button
-                  type="button"
-                  onClick={() => onRemoveQueueItem(item.key)}
-                  className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 opacity-0 shadow transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                  aria-label="Remove from queue"
+              <div key={item.key} className="flex items-center gap-2">
+                <div
+                  className={`group relative min-w-[6rem] rounded-xl border px-3 py-3 font-mono text-[0.8em] transition-colors ${queueStatusStyle[status]}`}
+                  title={item.label}
                 >
-                  <CloseIcon style={{ fontSize: 16 }} />
-                </button>
+                  {/*
+                    Delete button visibility:
+                    - Default: always visible (opacity-100) — correct for
+                      touch devices, which can't "hover" at all.
+                    - [@media(hover:hover)]: only devices that actually
+                      support a real hover (i.e. a mouse) get the
+                      fade-out-until-hover treatment.
+                    We deliberately do NOT use the `sm:` width breakpoint
+                    here: this app is used in landscape, where even phones
+                    report a CSS width well past 640px, so `sm:opacity-0`
+                    was wrongly treating touch users as "desktop" and
+                    hiding the button with no way to hover it back in.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveQueueItem(item.key)}
+                    className="absolute -right-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 opacity-100 shadow-md hover:bg-red-50 hover:text-red-500 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+                    aria-label={`Remove ${item.label} from queue`}
+                  >
+                    <CloseIcon style={{ fontSize: 16 }} />
+                  </button>
 
-                <div className="font-semibold">
-                  {item.poi || item.operation || item.type}
+                  <div className="font-semibold">{item.label}</div>
+
+                  {item.operation && (
+                    <div className="text-sm opacity-70">{item.operation}</div>
+                  )}
                 </div>
-                {item.operation && (
-                  <div className="text-sm opacity-70">{item.operation}</div>
+
+                {idx < taskQueue.length - 1 && (
+                  <ArrowForwardIosIcon
+                    sx={{ fontSize: 16 }}
+                    className="shrink-0 text-gray-400"
+                    aria-hidden="true"
+                  />
                 )}
               </div>
             );
@@ -174,35 +201,36 @@ export function TaskQueuePanel({
 
       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Play */}
           <button
             type="button"
             onClick={onPlayQueue}
             disabled={taskQueue.length === 0 || isQueueRunning}
-            className="flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-500 px-3 py-1.5 text-[0.85em] text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-500 px-3 py-1.5 text-[0.85em] text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-gray-400"
           >
             <PlayArrowIcon fontSize="small" /> Play
           </button>
 
-          {/* Pause / Resume */}
           <button
             type="button"
             onClick={() => onControlClick(isPaused ? "resume" : "pause")}
             disabled={!isQueueRunning && !isPaused}
-            className="flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-50 px-3 py-1.5 text-[0.85em] text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-amber-400 bg-amber-50 px-3 py-1.5 text-[0.85em] text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {isPaused ? (
-              <><PlayArrowIcon fontSize="small" /> Resume</>
+              <>
+                <PlayArrowIcon fontSize="small" /> Resume
+              </>
             ) : (
-              <><PauseIcon fontSize="small" /> Pause</>
+              <>
+                <PauseIcon fontSize="small" /> Pause
+              </>
             )}
           </button>
 
-          {/* Stop */}
           <button
             type="button"
             onClick={onCancelClick}
-            className="flex items-center gap-1.5 rounded-xl border border-red-300 px-3 py-1.5 text-[0.85em] text-red-600 hover:bg-red-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-red-300 px-3 py-1.5 text-[0.85em] text-red-600 transition-colors hover:bg-red-50"
           >
             <StopIcon fontSize="small" />
             Stop

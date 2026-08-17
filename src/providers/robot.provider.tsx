@@ -85,7 +85,6 @@ export function RobotProvider({
   const [socketUrl, setSocketUrl] = useState("");
 
   const [connectionEpoch, setConnectionEpoch] = useState(0);
-  const autoConnectedRef = useRef(false);
 
   // โหลด URL ที่เคยบันทึกไว้
   // แต่จะยังไม่ connect
@@ -240,11 +239,6 @@ export function RobotProvider({
     wsRef.current = socket;
   }, [socketUrl]);
 
-  // Cleanup ตอน component/provider ถูกถอดออก
-  //
-  // สำคัญ:
-  // ไม่มี connect() ตรงนี้
-  // ดังนั้นเปิดหน้าเว็บแล้วจะยังไม่ connect
   useEffect(() => {
     return () => {
       shouldReconnectRef.current = false;
@@ -260,11 +254,27 @@ export function RobotProvider({
   }, []);
 
   useEffect(() => {
-    if (autoConnectedRef.current) return;
+    const savedSocketUrl = localStorage.getItem("robot_ws");
+
+    if (savedSocketUrl) {
+      setSocketUrl(savedSocketUrl);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!socketUrl) return;
 
-    autoConnectedRef.current = true;
     connect();
+
+    return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
   }, [socketUrl, connect]);
 
   const value = useMemo(
